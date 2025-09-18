@@ -1,0 +1,20 @@
+fastapi
+uvicorn
+
+# Database
+SQLAlchemy
+asyncpg        # async PostgreSQL driver
+aiosqlite      # async SQLite driver (for local dev/testing)
+
+# JWT / Security
+python-jose
+passlib[bcrypt]
+
+# Async file handling
+
+
+# Pydantic for schemas
+pydantic
+
+# Optional but useful
+python-dotenv    # load env vars from .env file
