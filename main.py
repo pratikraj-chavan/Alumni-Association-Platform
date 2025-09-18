@@ -49,7 +49,7 @@ async def register_user(user:UserCreate,db:AsyncSession=Depends(get_db)):
 
 @app.post("/login",response_model=TokenResponse)
 async def login_user(user:UserLogin, db:AsyncSession=Depends(get_db)):
-    result=await db.execute(select(User).where(User.username==user.username))
+    result=await db.execute(select(User).where(User.email==user.email))
     db_user=result.scalars().first()
     if not db_user or not verify_password(user.password,db_user.password):
         raise HTTPException(status_code=401, detail="Invalid Credentials")
