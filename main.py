@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Depends,HTTPException,Request
 from fastapi.responses import JSONResponse
 from jose import JWTError,jwt
+from sqlalchemy import text
 from auth import SECRET_KEY,ALGORITHM
 from sqlalchemy.future import select
 from schemas import UserCreate, UserLogin, UserResponse, TokenResponse
@@ -41,7 +42,12 @@ async def startup():
 
 @app.post("/register", response_model=UserResponse)
 async def register_user(user:UserCreate,db:AsyncSession=Depends(get_db)):
+
     db_user=User(username=user.username, email=user.email, password=hash_password(user.password))
+    result = await db.execute(select(User).where(User.email == user.email))
+    existing_user = result.scalars().first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Email already available")
     db.add(db_user)
     await db.commit()
     await db.refresh(db_user)
@@ -54,6 +60,10 @@ async def login_user(user:UserLogin, db:AsyncSession=Depends(get_db)):
     if not db_user or not verify_password(user.password,db_user.password):
         raise HTTPException(status_code=401, detail="Invalid Credentials")
     token=create_access_token({"sub":db_user.email})
+    if token:
+        query=text("UPDATE users SET is_active = true where email = :email")
+        new=await db.execute(query, {"email":user.email})
+        await db.commit()
     return {"access_token":token, "token_type":"bearer"}
 
 @app.get("/user",response_model=list[UserResponse])
@@ -68,7 +78,24 @@ async def get_user(id:int, db:AsyncSession=Depends(get_db)):
     if not result:
         raise HTTPException(status_code=404, detail="User not found")
     return result
-
+  
 @app.get("/me")
 async def get_me(request:Request):
     return {"logged_in_as":request.state.user}
+
+@app.get("/user_logout/{id}")
+async def logout_user(id:int, db:AsyncSession=Depends(get_db)):
+    result=await db.get(User,id)
+    if not result:
+        raise HTTPException(status_code=404,detail="User not found")
+    query=text("UPDATE users SET is_active = false where id = :id")
+    new=await db.execute(query, {"id":id})
+    await db.commit()
+    return "Successfully Logout"
+@app.get("/active_status")
+async def get_active_status(db:AsyncSession=Depends(get_db)):
+    # result=await db.execute(select(User).where (User.is_active == True))
+    query=text("SELECT COUNT(*) FROM users where is_active= true")
+    results=await db.execute(query)
+    count = results.scalar()
+    return {"Active Users Count is:":count}
