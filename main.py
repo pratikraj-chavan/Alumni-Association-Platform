@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends,HTTPException,Request
+from fastapi import FastAPI, Depends,HTTPException,Request,BackgroundTasks
 from fastapi.responses import JSONResponse
 from jose import JWTError,jwt
 from sqlalchemy import text
@@ -9,6 +9,9 @@ from models import User
 from database import Base, get_db,engine
 from auth import hash_password, verify_password, create_access_token
 from sqlalchemy.ext.asyncio import AsyncSession
+from utils.otp import generate_otp, get_otp_expiry
+from utils.email import send_email
+
 
 app=FastAPI()
 
@@ -41,7 +44,12 @@ async def startup():
 
 
 @app.post("/register", response_model=UserResponse)
-async def register_user(user: UserCreate, db: AsyncSession = Depends(get_db)):
+async def register_user(
+    user: UserCreate,
+     background_tasks: BackgroundTasks, 
+    db: AsyncSession = Depends(get_db),
+    
+):
     # check if email already exists
     result = await db.execute(select(User).where(User.email == user.email))
     existing_user = result.scalars().first()
@@ -58,6 +66,12 @@ async def register_user(user: UserCreate, db: AsyncSession = Depends(get_db)):
     if result.scalars().first():
         raise HTTPException(status_code=400, detail="PRN No already exists")
 
+    
+    # ... duplicate checks
+
+    # Generate OTP
+    otp = generate_otp()
+    otp_expiry = get_otp_expiry()
     db_user = User(
         username=user.username,
         email=user.email,
@@ -84,21 +98,100 @@ async def register_user(user: UserCreate, db: AsyncSession = Depends(get_db)):
         emergency_contact=user.emergency_contact,
         job_profile=user.job_profile,
         profile_picture=user.profile_picture,
-        status=user.status,
+        status="inactive",
+        is_verified=False,
+        otp_code=otp,
+        otp_expires_at=otp_expiry
     )
 
     db.add(db_user)
     await db.commit()
     await db.refresh(db_user)
-    return db_user
 
+    background_tasks.add_task(
+        send_email, 
+        user.email, 
+        "Your OTP Code", 
+        f"Your OTP is {otp}. It expires in 5 minutes."
+    )
+    return db_user
+from datetime import datetime
+
+@app.post("/verify-otp")
+async def verify_otp(user_id: int, otp_code: str, db: AsyncSession = Depends(get_db)):
+    result = await db.get(User, user_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Check OTP & expiry
+    now_ts = int(datetime.utcnow().timestamp())
+    if result.otp_code != otp_code or result.otp_expires_at < now_ts:
+        raise HTTPException(status_code=400, detail="Invalid or expired OTP")
+
+    # Mark user as verified
+    result.is_verified = True
+    result.otp_code = None
+    result.otp_expires_at = None
+    result.status = "active"  # optional
+    await db.commit()
+    await db.refresh(result)
+
+    return {"message": "User verified successfully. You can now login."}
+async def get_current_admin(request: Request, db: AsyncSession = Depends(get_db)):
+    email = request.state.user
+    user = (await db.execute(select(User).where(User.email == email))).scalars().first()
+    if not user or not user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
+@app.post("/register-admin")
+async def register_admin(user: UserCreate, current_user: User = Depends(get_current_admin), db: AsyncSession = Depends(get_db)):
+    db_user = User(
+        username=user.username,
+        email=user.email,
+        password=hash_password(user.password),
+        is_admin=True
+        # ... other fields
+    )
+    db.add(db_user)
+    await db.commit()
+    await db.refresh(db_user)
+    return {"message": "Admin created successfully"}
+
+
+@app.post("/admin/verify_user/{user_id}")
+async def admin_verify_user(
+    user_id: int, 
+    current_admin: User = Depends(get_current_admin), 
+    db: AsyncSession = Depends(get_db)
+):
+    # Only admin reaches here
+    user = await db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if not user.is_verified:
+        raise HTTPException(status_code=400, detail="User has not verified OTP yet")
+
+    user.is_admin_verified = True
+    user.status = "active"
+    await db.commit()
+    await db.refresh(user)
+
+    return {"message": f"User {user.username} verified by admin successfully"}
 
 @app.post("/login",response_model=TokenResponse)
 async def login_user(user:UserLogin, db:AsyncSession=Depends(get_db)):
-    result=await db.execute(select(User).where(User.email==user.email))
-    db_user=result.scalars().first()
-    if not db_user or not verify_password(user.password,db_user.password):
-        raise HTTPException(status_code=401, detail="Invalid Credentials")
+    result = await db.execute(select(User).where(User.email==user.email))
+    db_user = result.scalars().first()
+
+    if not db_user or not db_user.is_verified:
+        raise HTTPException(status_code=401, detail="OTP not verified")
+
+    if not db_user.is_admin_verified:
+        raise HTTPException(status_code=403, detail="Admin approval required")
+
+    if not verify_password(user.password, db_user.password):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
     token=create_access_token({"sub":db_user.email})
     if token:
         query=text("UPDATE users SET is_active = true where email = :email")

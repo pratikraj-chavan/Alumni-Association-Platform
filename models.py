@@ -9,6 +9,10 @@ class User(Base):
     username = Column(String, unique=True, index=True, nullable=False)
     email = Column(String, unique=True, index=True, nullable=False)
     password = Column(String, nullable=False)
+    is_admin_verified = Column(Boolean, default=False)  # Admin verified
+    is_verified = Column(Boolean, default=False)  # ✅ OTP verification status
+    otp_code = Column(String, nullable=True)       # ✅ store OTP temporarily
+    otp_expires_at = Column(Integer, nullable=True) # timestamp for expiry
 
     prn_no = Column(String, unique=True, nullable=False)
     name = Column(String, nullable=False)
@@ -40,3 +44,5 @@ class User(Base):
 
     status = Column(String, nullable=False, default="inactive")
     is_active = Column(Boolean, default=False)
+    is_admin = Column(Boolean, default=False)
+
