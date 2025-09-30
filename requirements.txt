@@ -1,6 +1,6 @@
 fastapi
 uvicorn
-
+validator
 # Database
 SQLAlchemy
 asyncpg        # async PostgreSQL driver
