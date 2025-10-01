@@ -13,8 +13,7 @@ async def send_email(to_email: str, subject: str, body: str):
         hostname="smtp.gmail.com",
         port=587,
         start_tls=True,
-        username="chavanpratikpsc@gmail.com",
-        password="ettd stej eotw mahg"
+        
         
     )
     print("email send")
