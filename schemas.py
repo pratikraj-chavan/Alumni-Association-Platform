@@ -18,10 +18,10 @@ class UserCreate(BaseModel):
     ug_degree: str
     ug_institute: str
     ug_graduation_year: int
-    pg_degree: str
-    pg_institute: str
-    pg_graduation_year: int
-    department: str
+    pg_degree: Optional[str] = None
+    pg_institute: Optional[str] = None
+    pg_graduation_year: Optional[int] = None
+    department: Optional[str] = None
     prn_no: str
     company: Optional[str] = None
     experience: Optional[float] = None
@@ -45,7 +45,7 @@ class UserLogin(BaseModel):
 class UserResponse(BaseModel):
     id:int
     username:str
-    email:str
+    
 
 class UserUpdateResponse(BaseModel):
     name: Optional[str] = None
@@ -74,3 +74,14 @@ class TokenResponse(BaseModel):
     access_token:str
     token_type:str
 
+class OTPVerifyRequest(BaseModel):
+    user_id: int
+    otp_code: str
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+class ResetPasswordRequest(BaseModel):
+    email: str
+    otp_code: str
+    new_password: str

@@ -40,7 +40,7 @@ class User(Base):
 
     emergency_contact = Column(String, nullable=False)
     job_profile = Column(String, nullable=False)
-    profile_picture = Column(String, nullable=True)
+    profile_picture = Column(String, nullable=True, default="/source/default.jpeg")
 
     status = Column(String, nullable=False, default="inactive")
     is_active = Column(Boolean, default=False)
